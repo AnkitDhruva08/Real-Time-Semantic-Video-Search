@@ -9,3 +9,16 @@ Phase 2: Embedding Generation & CLIP Integration (1 Month)Running those frames t
 Phase 3: Vector Database & Search Logic (1 Month)Storing millions of embeddings in a vector database (like Pinecone, Milvus, or Weaviate). Implementing the "Natural Language" query side where the user's text is converted into a vector and matched.
 Phase 4: UI/UX & Result Playback (1 Month)Developing the frontend where a user types a query and the video player jumps to the exact timestamp of the result.
  
+
+
+
+
+
+Run Celery
+celery -A app.workers.ingestion_worker.celery_app worker --loglevel=info
+
+Run Bakcend 
+uvicorn app.main:app --reload
+
+For table migrations
+alembic upgrade head
