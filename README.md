@@ -28,3 +28,60 @@ alembic upgrade head
 
 
 pip install -r requirements.txt
+
+
+
+
+                ┌─────────────────────┐
+                │      Frontend       │
+                │ React / Next.js UI  │
+                └──────────┬──────────┘
+                           │
+                           │ Upload Video
+                           ▼
+                 ┌───────────────────┐
+                 │      FastAPI      │
+                 │  Upload Endpoint  │
+                 └─────────┬─────────┘
+                           │
+                           │ store metadata
+                           ▼
+                 ┌───────────────────┐
+                 │    PostgreSQL     │
+                 │ videos table      │
+                 └─────────┬─────────┘
+                           │
+                           │ enqueue job
+                           ▼
+                 ┌───────────────────┐
+                 │       Redis       │
+                 │    Task Queue     │
+                 └─────────┬─────────┘
+                           │
+                           ▼
+                 ┌───────────────────┐
+                 │   Celery Worker   │
+                 │ Video Processing  │
+                 └─────────┬─────────┘
+                           │
+          ┌────────────────┼────────────────┐
+          ▼                ▼                ▼
+   Frame Extraction   CLIP Embedding   Thumbnail Gen
+      (FFmpeg)           (GPU)             (JPEG)
+          │                │                │
+          └───────────────┼────────────────┘
+                          ▼
+                 ┌───────────────────┐
+                 │    PostgreSQL     │
+                 │  pgvector index   │
+                 │ frame_embeddings  │
+                 └─────────┬─────────┘
+                           │
+                           ▼
+                 ┌───────────────────┐
+                 │  Semantic Search  │
+                 │   CLIP text → vec │
+                 └─────────┬─────────┘
+                           ▼
+                      Search Results
+
