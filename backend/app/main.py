@@ -1,19 +1,41 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
+import os
 
 from app.core.database import engine
+from app.core.config import settings
 from app.api.routes import api_router
 
 
-app = FastAPI(title="Semantic Video Search API")
+app = FastAPI(
+    title="Real-Time Semantic Video Search",
+    version="1.0.0",
+)
 
 
-# CORS (IMPORTANT)
+# =========================================
+# Ensure storage directories exist
+# =========================================
+
+BASE_DIR = os.getcwd()
+
+VIDEO_DIR = os.path.join(BASE_DIR, "storage/videos")
+THUMB_DIR = os.path.join(BASE_DIR, "storage/thumbnails")
+
+os.makedirs(VIDEO_DIR, exist_ok=True)
+os.makedirs(THUMB_DIR, exist_ok=True)
+
+
+# =========================================
+# CORS
+# =========================================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        settings.FRONTEND_URL,
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ],
@@ -23,14 +45,28 @@ app.add_middleware(
 )
 
 
-app.mount("/videos", StaticFiles(directory="storage/videos"), name="videos")
-app.mount("/thumbnails", StaticFiles(directory="storage/thumbnails"), name="thumbnails")
+# =========================================
+# Static Files
+# =========================================
+
+app.mount("/videos", StaticFiles(directory=VIDEO_DIR), name="videos")
+app.mount("/thumbnails", StaticFiles(directory=THUMB_DIR), name="thumbnails")
+
+
+# =========================================
+# API ROUTES
+# =========================================
 
 app.include_router(api_router, prefix="/api/v1")
 
 
+# =========================================
+# Startup Event
+# =========================================
+
 @app.on_event("startup")
 async def startup_event():
+
     print("🚀 Starting Semantic Video Search Backend...")
 
     try:

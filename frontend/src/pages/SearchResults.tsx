@@ -1,251 +1,544 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 
-/* ── Dummy data ─────────────────────────────────────────── */
-const DUMMY = [
-  { id: 1, title: "Neural Network Training Session",  file: "ml_lecture_series_ep12.mp4",      timestamp: "00:14:32", seconds: 872,  similarity: 0.97, thumbnail: "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=340&q=75", tag: "AI/ML"      },
-  { id: 2, title: "Gradient Descent Visualization",   file: "deep_learning_fundamentals.mp4",  timestamp: "00:38:10", seconds: 2290, similarity: 0.91, thumbnail: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=340&q=75", tag: "Math"       },
-  { id: 3, title: "Backpropagation Explained",        file: "cs231n_lecture_04.mp4",           timestamp: "01:02:45", seconds: 3765, similarity: 0.87, thumbnail: "https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=340&q=75", tag: "Lecture"    },
-  { id: 4, title: "Loss Function Convergence",        file: "stanford_ml_2024.mp4",            timestamp: "00:52:18", seconds: 3138, similarity: 0.82, thumbnail: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=340&q=75", tag: "Statistics" },
-  { id: 5, title: "Transformer Architecture Overview",file: "attention_is_all_you_need.mp4",   timestamp: "00:08:55", seconds: 535,  similarity: 0.78, thumbnail: "https://images.unsplash.com/photo-1639322537228-f710d846310a?w=340&q=75", tag: "NLP"        },
-  { id: 6, title: "CLIP Model Embedding Space",       file: "openai_clip_demo.mp4",            timestamp: "00:22:07", seconds: 1327, similarity: 0.74, thumbnail: "https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=340&q=75", tag: "Vision"     },
-];
-type Result = typeof DUMMY[0];
+/* ─────────────────── Types ─────────────────── */
 
-/* ── Sub-components ─────────────────────────────────────── */
+type Result = {
+  tag: any;
+  id: string;
+  title: string;
+  file: string;
+  video: string;
+  timestamp: string;
+  seconds: number;
+  similarity: number;
+  thumbnail: string;
+};
+
+/* ─────────────────── Similarity Bar ─────────────────── */
+
 function SimBar({ v }: { v: number }) {
-  const color = v >= 0.9 ? "#52c6ff" : v >= 0.8 ? "#3b9eff" : "#1e6ab8";
+  const colorClass =
+    v >= 0.9
+      ? "text-[#00ffc8]"
+      : v >= 0.8
+      ? "text-[#00c9a7]"
+      : "text-[#0097a7]";
+
+  const barColor =
+    v >= 0.9
+      ? "from-[#00ffc8] to-[#52c6ff]"
+      : v >= 0.8
+      ? "from-[#00c9a7] to-[#52c6ff]"
+      : "from-[#0097a7] to-[#52c6ff]";
+
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-      <div className="sim-bar-track">
-        <div className="sim-bar-fill" style={{ width: `${v * 100}%`, background: color }} />
+    <div className="flex items-center gap-2 mt-1.5">
+      <div className="flex-1 h-1 bg-white/[0.08] rounded-full overflow-hidden">
+        <div
+          className={`h-full bg-gradient-to-r ${barColor} rounded-full transition-[width] duration-[600ms] ease-[cubic-bezier(.4,0,.2,1)]`}
+          style={{ width: `${v * 100}%` }}
+        />
       </div>
-      <span className="font-mono" style={{ fontSize: 10, color: "#52c6ff", minWidth: 36 }}>{Math.round(v * 100)}%</span>
+      <span
+        className={`text-[11px] font-bold ${colorClass} min-w-[38px] font-mono tracking-wider`}
+      >
+        {Math.round(v * 100)}%
+      </span>
     </div>
   );
 }
+
+/* ─────────────────── Tag Pill ─────────────────── */
+
+function TagPill({ tag }: { tag: string }) {
+  return (
+    <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-widest uppercase bg-[rgba(0,255,200,0.12)] text-[#00ffc8] border border-[rgba(0,255,200,0.25)]">
+      {tag}
+    </span>
+  );
+}
+
+/* ─────────────────── Player Expand ─────────────────── */
 
 function PlayerExpand({ r }: { r: Result }) {
-  const pct = (r.seconds / 7200) * 100;
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+
+    const jumpToTime = async () => {
+      v.currentTime = r.seconds;
+      try {
+        await v.play();
+      } catch {
+        // autoplay blocked — user can press play manually
+      }
+    };
+
+    if (v.readyState >= 1) {
+      jumpToTime();
+    } else {
+      v.addEventListener("loadedmetadata", jumpToTime);
+      return () => v.removeEventListener("loadedmetadata", jumpToTime);
+    }
+  }, [r.seconds]);
+
   return (
-    <div className="animate-fadeIn" style={{ marginTop: 14, padding: 14, background: "rgba(82,198,255,0.04)", borderRadius: 10, border: "1px solid var(--border-default)" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-        <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>Jumping to matched frame</span>
-        <span className="badge">{r.timestamp}</span>
-      </div>
-      {/* scrubber */}
-      <div style={{ position: "relative", height: 4, background: "var(--cyan-ghost)", borderRadius: 2, marginBottom: 12 }}>
-        <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${pct}%`, background: "var(--cyan)", borderRadius: 2 }} />
-        <div style={{ position: "absolute", top: -4, left: `${pct}%`, width: 12, height: 12, borderRadius: "50%", background: "var(--cyan)", border: "2px solid var(--bg-base)", transform: "translateX(-50%)" }} />
-      </div>
-      {/* controls */}
-      <div style={{ display: "flex", gap: 8 }}>
-        {(["-30s", "▶  Play", "+30s", "Clip"] as const).map(btn => (
-          <button
-            key={btn}
-            style={{
-              flex: btn === "▶  Play" ? 2 : 1, padding: "8px 0",
-              background: btn === "▶  Play" ? "rgba(82,198,255,0.14)" : "rgba(82,198,255,0.04)",
-              border: `1px solid ${btn === "▶  Play" ? "var(--cyan-border-hi)" : "var(--border-subtle)"}`,
-              borderRadius: 7,
-              color: btn === "▶  Play" ? "var(--cyan)" : "var(--text-secondary)",
-              fontSize: 11, fontFamily: "var(--font-mono)", cursor: "pointer",
-            }}
-          >
-            {btn}
-          </button>
-        ))}
+    <div
+      onClick={(e) => e.stopPropagation()}
+      className="mt-4 p-4 rounded-xl bg-[rgba(0,255,200,0.05)] border border-[rgba(0,255,200,0.15)]"
+    >
+      <video
+        ref={videoRef}
+        src={r.video}
+        poster={r.thumbnail}
+        controls
+        muted
+        playsInline
+        preload="metadata"
+        className="w-full rounded-lg"
+      />
+      <div className="mt-2 text-xs text-white/50">
+        Jumped to timestamp: {r.timestamp}
       </div>
     </div>
   );
 }
 
-/* ── Page ───────────────────────────────────────────────── */
+/* ─────────────────── Shimmer Skeleton ─────────────────── */
+
+function Shimmer({ className }: { className?: string }) {
+  return (
+    <div
+      className={`animate-[shimmer_1.4s_infinite] bg-[linear-gradient(90deg,#0a1520_25%,#0d1e2e_50%,#0a1520_75%)] bg-[length:200%_100%] ${className}`}
+    />
+  );
+}
+
+/* ─────────────────── Result Card ─────────────────── */
+
+function ResultCard({
+  r,
+  view,
+  isSelected,
+  onToggle,
+  index,
+}: {
+  r: Result;
+  view: "list" | "grid";
+  isSelected: boolean;
+  onToggle: () => void;
+  index: number;
+}) {
+  const [imgLoaded, setImgLoaded] = useState(false);
+  const [imgError, setImgError] = useState(false);
+
+  const formatTime = (secs: number) => {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = Math.floor(secs % 60);
+    return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  };
+
+  const cardBase = isSelected
+    ? "bg-[rgba(0,255,200,0.07)] border-[rgba(0,255,200,0.3)]"
+    : "bg-white/[0.025] border-white/[0.07]";
+
+  if (view === "grid") {
+    return (
+      <div
+        onClick={onToggle}
+        className={`${cardBase} border rounded-2xl overflow-hidden cursor-pointer transition-all duration-200`}
+        style={{
+          animationDelay: `${index * 0.05}s`,
+          animation: "fadeSlideIn 0.35s ease both",
+        }}
+      >
+        {/* Thumbnail */}
+        <div className="relative w-full aspect-video bg-[#0a1520] overflow-hidden">
+          {!imgLoaded && !imgError && <Shimmer className="absolute inset-0" />}
+
+          {imgError ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-white/20 text-xs gap-1.5">
+              <span className="text-3xl">🎞️</span>
+              <span>No Preview</span>
+            </div>
+          ) : (
+            <img
+              src={r.thumbnail}
+              alt={r.title}
+              onLoad={() => setImgLoaded(true)}
+              onError={() => setImgError(true)}
+              className={`w-full h-full object-cover transition-transform duration-300 ${
+                imgLoaded ? "block" : "hidden"
+              }`}
+            />
+          )}
+
+          {/* Time badge */}
+          <div className="absolute bottom-2 right-2 bg-black/75 backdrop-blur-sm text-white text-[11px] font-mono px-2 py-0.5 rounded-md font-semibold">
+            {formatTime(r.seconds)}
+          </div>
+
+          {/* Play overlay */}
+          <div
+            className={`absolute inset-0 bg-[rgba(0,255,200,0.1)] flex items-center justify-center transition-opacity duration-200 ${
+              isSelected ? "opacity-100" : "opacity-0"
+            }`}
+          >
+            <div className="w-11 h-11 rounded-full bg-[rgba(0,255,200,0.9)] flex items-center justify-center text-[18px] text-[#050d14] font-black">
+              ▶
+            </div>
+          </div>
+        </div>
+
+        {/* Info */}
+        <div className="px-3.5 py-3">
+          <div className="font-bold text-sm text-white mb-1 leading-snug truncate">
+            {r.title}
+          </div>
+          <div className="text-[11px] text-white/40 mb-1.5 truncate">{r.file}</div>
+          {r.tag && <TagPill tag={r.tag} />}
+          <SimBar v={r.similarity} />
+        </div>
+
+        {isSelected && (
+          <div className="px-3.5 pb-3.5">
+            <PlayerExpand r={r} />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // LIST view
+  return (
+    <div
+      onClick={onToggle}
+      className={`${cardBase} border rounded-2xl p-3.5 cursor-pointer transition-all duration-200`}
+      style={{
+        animationDelay: `${index * 0.05}s`,
+        animation: "fadeSlideIn 0.35s ease both",
+      }}
+    >
+      <div className="flex gap-4 items-start">
+        {/* Thumbnail */}
+        <div className="relative w-40 h-[90px] flex-shrink-0 rounded-xl overflow-hidden bg-[#0a1520]">
+          {!imgLoaded && !imgError && <Shimmer className="absolute inset-0" />}
+
+          {imgError ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-white/20 text-[11px] gap-1">
+              <span className="text-2xl">🎞️</span>
+              <span>No Preview</span>
+            </div>
+          ) : (
+            <img
+              src={r.thumbnail}
+              alt={r.title}
+              onLoad={() => setImgLoaded(true)}
+              onError={() => setImgError(true)}
+              className={`w-full h-full object-cover ${imgLoaded ? "block" : "hidden"}`}
+            />
+          )}
+
+          {/* Time badge */}
+          <div className="absolute bottom-1.5 right-1.5 bg-black/80 text-white text-[10px] font-mono px-1.5 py-px rounded font-semibold">
+            {formatTime(r.seconds)}
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2.5 mb-1">
+            <div className="font-bold text-[15px] text-white leading-snug">
+              {r.title}
+            </div>
+            {r.tag && <TagPill tag={r.tag} />}
+          </div>
+
+          <div className="text-xs text-white/40 mb-2 truncate">📁 {r.file}</div>
+
+          <SimBar v={r.similarity} />
+        </div>
+
+        {/* Expand arrow */}
+        <div
+          className={`text-white/30 text-lg self-center transition-transform duration-200 ${
+            isSelected ? "rotate-180" : "rotate-0"
+          }`}
+        >
+          ⌄
+        </div>
+      </div>
+
+      {isSelected && <PlayerExpand r={r} />}
+    </div>
+  );
+}
+
+/* ─────────────────── Main Page ─────────────────── */
+
 export function SearchResults() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+
   const q = searchParams.get("q") ?? "";
 
   const [liveQuery, setLiveQuery] = useState(q);
-  const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState<Result[]>([]);
-  const [selected, setSelected] = useState<Result | null>(null);
-  const [done, setDone] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
   const [view, setView] = useState<"list" | "grid">("list");
+  const [sortBy, setSortBy] = useState<"similarity" | "time">("similarity");
+
+  /* ── Fetch ── */
+  const fetchVideoData = async (query: string) => {
+    if (!query.trim()) return;
+    setIsLoading(true);
+    setError("");
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_BASE_URL}/search?q=${encodeURIComponent(query)}`
+      );
+      if (!response.ok) throw new Error(`API Error ${response.status}`);
+      const data = await response.json();
+      console.log("Raw API response:", data);
+
+      const mapped = (data.results || []).map((r: any) => ({
+        id: r.frame_id ?? `${r.video_id}-${r.timestamp}`,
+        title: r.title ?? "Video",
+        file: r.video_url ?? "",
+        video: `http://localhost:8000/videos/${r.filename ?? r.video_id}`,
+        timestamp: new Date(r.timestamp * 1000).toISOString().substr(11, 8),
+        seconds: r.timestamp,
+        similarity: r.similarity,
+        thumbnail: `http://localhost:8000${r.thumbnail_url}`,
+      }));
+
+      console.log("Mapped results:", mapped);
+
+      setResults(mapped);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to fetch videos. Please check your connection.");
+      setResults([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    if (!q) return;
-    setLiveQuery(q);
-    setIsLoading(true); setResults([]); setDone(false); setSelected(null);
-    const t = setTimeout(() => { setIsLoading(false); setDone(true); setResults(DUMMY); }, 1600);
-    return () => clearTimeout(t);
+    if (q) {
+      setLiveQuery(q);
+      fetchVideoData(q);
+    }
   }, [q]);
 
   const doSearch = (term = liveQuery) => {
     const t = term.trim();
     if (!t) return;
+    setSelected(null);
     navigate(`/search?q=${encodeURIComponent(t)}`);
   };
 
+  const sortedResults = [...results].sort((a, b) =>
+    sortBy === "similarity" ? b.similarity - a.similarity : a.seconds - b.seconds
+  );
+
   return (
-    <div className="page" style={{ paddingTop: 28 }}>
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;600;700;800&display=swap');
 
-      {/* ── Sticky search bar ── */}
-      <div className="animate-fadeUp" style={{ marginBottom: 28 }}>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <div className="search-wrap" style={{ flex: 1 }}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <circle cx="7" cy="7" r="4.5" stroke="var(--cyan)" strokeWidth="1.5" />
-              <line x1="10.5" y1="10.5" x2="14" y2="14" stroke="var(--cyan)" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-            <input
-              className="search-input"
-              value={liveQuery}
-              onChange={e => setLiveQuery(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && doSearch()}
-              placeholder="Refine your search…"
+        body { font-family: 'Syne', sans-serif; }
+
+        @keyframes fadeSlideIn {
+          from { opacity: 0; transform: translateY(12px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes shimmer {
+          0%   { background-position: -200% 0; }
+          100% { background-position:  200% 0; }
+        }
+
+        @keyframes pulse-ring {
+          0%   { opacity: 0.6; transform: scale(1);   }
+          100% { opacity: 0;   transform: scale(1.6); }
+        }
+      `}</style>
+
+      <div
+        className="max-w-[980px] mx-auto px-5 pt-8 pb-20"
+        style={{ animation: "fadeSlideIn 0.4s ease" }}
+      >
+        {/* ── Header ── */}
+        <div className="flex items-center gap-3 mb-8">
+          <button
+            onClick={() => navigate("/")}
+            className="bg-transparent border-none cursor-pointer text-white/40 text-2xl px-2 py-1 rounded-lg transition-colors duration-200 hover:text-[#00ffc8]"
+            title="Home"
+          >
+            ←
+          </button>
+
+          <div className="text-[13px] font-bold tracking-[0.14em] uppercase text-white/25">
+            Video Frame Search
+          </div>
+
+          {/* Live indicator */}
+          <div className="ml-auto relative w-2 h-2">
+            <div className="w-2 h-2 rounded-full bg-[#00ffc8]" />
+            <div
+              className="absolute inset-[-4px] rounded-full border-2 border-[#00ffc8]"
+              style={{ animation: "pulse-ring 1.5s ease-out infinite" }}
             />
-            {isLoading && <div style={{ width: 18, height: 18, border: "2px solid var(--border-default)", borderTopColor: "var(--cyan)", borderRadius: "50%", animation: "spin .8s linear infinite", flexShrink: 0 }} />}
           </div>
-          <button className="btn btn-primary" onClick={() => doSearch()}>SEARCH</button>
-          <button className="btn btn-ghost" onClick={() => navigate("/")}>← Home</button>
         </div>
-      </div>
 
-      {/* ── Loading ── */}
-      {isLoading && (
-        <div style={{ textAlign: "center", padding: "80px 0" }}>
-          <div style={{ width: 56, height: 56, border: "2px solid var(--border-subtle)", borderTopColor: "var(--cyan)", borderRadius: "50%", animation: "spin .9s linear infinite", margin: "0 auto 20px" }} />
-          <div style={{ fontSize: 14, color: "var(--text-secondary)" }}>Scanning vector embeddings…</div>
-          <div className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>ANN search across 4.49M frames</div>
-        </div>
-      )}
-
-      {/* ── Results ── */}
-      {done && results.length > 0 && (
-        <>
-          {/* header row */}
-          <div className="animate-fadeIn" style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-            <span className="font-mono" style={{ fontSize: 11, color: "var(--cyan-dim)" }}>
-              {results.length} RESULTS
+        {/* ── Search Bar ── */}
+        <div className="flex gap-2.5 mb-7 relative">
+          <div className="flex-1 relative flex items-center">
+            <span className="absolute left-4 text-base text-white/30 pointer-events-none">
+              🔍
             </span>
-            <span className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>—</span>
-            <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>"{q}"</span>
-            <div style={{ flex: 1, height: 1, background: "var(--border-subtle)" }} />
-            {/* view toggle */}
-            <div style={{ display: "flex", gap: 4 }}>
-              {(["list", "grid"] as const).map(v => (
-                <button
-                  key={v}
-                  onClick={() => setView(v)}
-                  className="btn"
-                  style={{
-                    padding: "5px 12px", fontSize: 11,
-                    background: view === v ? "var(--cyan-ghost)" : "transparent",
-                    borderColor: view === v ? "var(--cyan-border)" : "var(--border-subtle)",
-                    color: view === v ? "var(--cyan)" : "var(--text-muted)",
-                  }}
-                >
-                  {v === "list"
-                    ? <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect y="0" width="12" height="2" rx="1"/><rect y="5" width="12" height="2" rx="1"/><rect y="10" width="12" height="2" rx="1"/></svg>
-                    : <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect width="5" height="5" rx="1"/><rect x="7" width="5" height="5" rx="1"/><rect y="7" width="5" height="5" rx="1"/><rect x="7" y="7" width="5" height="5" rx="1"/></svg>
+            <input
+              value={liveQuery}
+              onChange={(e) => setLiveQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && doSearch()}
+              placeholder="Search video frames by concept, object, scene…"
+              className="w-full py-3.5 pl-11 pr-4 bg-white/[0.05] border border-white/[0.12] rounded-xl text-white text-[15px] outline-none transition-all duration-200 placeholder:text-white/25 focus:border-[rgba(0,255,200,0.5)] focus:shadow-[0_0_0_3px_rgba(0,255,200,0.08)] font-[Syne,sans-serif]"
+            />
+          </div>
+
+          <button
+            onClick={() => doSearch()}
+            className="px-7 py-3.5 rounded-xl border-none bg-gradient-to-r from-[#00ffc8] to-[#52c6ff] text-[#050d14] font-bold text-sm tracking-widest cursor-pointer shadow-[0_0_24px_rgba(0,255,200,0.2)] transition-opacity duration-200 hover:opacity-90"
+          >
+            SEARCH
+          </button>
+        </div>
+
+        {/* ── Loading ── */}
+        {isLoading && (
+          <div
+            className="text-center py-24"
+            style={{ animation: "fadeSlideIn 0.3s ease" }}
+          >
+            <div className="w-11 h-11 border-[3px] border-[rgba(0,255,200,0.15)] border-t-[#00ffc8] rounded-full animate-spin mx-auto mb-5" />
+            <div className="text-white/40 text-sm tracking-widest">
+              Searching video embeddings…
+            </div>
+          </div>
+        )}
+
+        {/* ── Error ── */}
+        {error && (
+          <div className="px-4 py-3.5 bg-[rgba(255,80,80,0.08)] border border-[rgba(255,80,80,0.2)] rounded-xl text-[#ff8080] text-sm mb-5">
+            ⚠ {error}
+          </div>
+        )}
+
+        {/* ── Results ── */}
+        {!isLoading && results.length > 0 && (
+          <>
+            {/* Toolbar */}
+            <div className="flex items-center justify-between mb-5 flex-wrap gap-2.5">
+              <div className="text-[13px] text-white/45 tracking-wide">
+                <span className="text-[#00ffc8] font-bold font-mono">
+                  {results.length}
+                </span>{" "}
+                results for{" "}
+                <span className="text-white/70">"{q}"</span>
+              </div>
+
+              <div className="flex gap-2 items-center">
+                {/* Sort */}
+                <select
+                  value={sortBy}
+                  onChange={(e) =>
+                    setSortBy(e.target.value as "similarity" | "time")
                   }
-                  {v}
-                </button>
-              ))}
-            </div>
-            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>sorted by similarity</span>
-          </div>
-
-          {/* cards */}
-          {view === "list" ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {results.map((r, i) => (
-                <div
-                  key={r.id}
-                  className={`result-card${selected?.id === r.id ? " selected" : ""}`}
-                  style={{ animationDelay: `${i * 0.055}s` }}
-                  onClick={() => setSelected(selected?.id === r.id ? null : r)}
+                  className="px-3 py-1.5 bg-white/[0.05] border border-white/10 rounded-lg text-white/65 text-xs cursor-pointer outline-none font-[Syne,sans-serif]"
                 >
-                  <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-                    {/* thumb */}
-                    <div style={{ position: "relative", flexShrink: 0 }}>
-                      <img src={r.thumbnail} alt={r.title} style={{ width: 130, height: 74, objectFit: "cover", borderRadius: 8, display: "block", opacity: .88 }} />
-                      <div style={{ position: "absolute", bottom: 5, right: 5, background: "rgba(6,10,18,.88)", borderRadius: 3, padding: "2px 6px", fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--cyan)", border: "1px solid var(--border-subtle)" }}>
-                        {r.timestamp}
-                      </div>
-                      <div style={{ position: "absolute", top: 5, left: 5, width: 22, height: 22, background: "rgba(6,10,18,.82)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <svg width="8" height="10" viewBox="0 0 8 10"><polygon points="1,1 7,5 1,9" fill="var(--cyan)" /></svg>
-                      </div>
-                    </div>
-                    {/* meta */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
-                        <span className="badge">{r.tag}</span>
-                        <span className="font-mono" style={{ fontSize: 10, color: "var(--text-muted)" }}>#{String(i + 1).padStart(2, "0")}</span>
-                      </div>
-                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.title}</div>
-                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.file}</div>
-                      <SimBar v={r.similarity} />
-                    </div>
-                    {/* arrow */}
-                    <div style={{ width: 32, height: 32, border: "1px solid var(--border-default)", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", flexShrink: 0, alignSelf: "center" }}>
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M2 6h8M6 2l4 4-4 4"/>
-                      </svg>
-                    </div>
-                  </div>
-                  {selected?.id === r.id && <PlayerExpand r={r} />}
-                </div>
-              ))}
-            </div>
-          ) : (
-            /* Grid view */
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
-              {results.map((r, i) => (
-                <div
-                  key={r.id}
-                  className={`result-card${selected?.id === r.id ? " selected" : ""}`}
-                  style={{ animationDelay: `${i * 0.05}s`, padding: 12 }}
-                  onClick={() => setSelected(selected?.id === r.id ? null : r)}
-                >
-                  <div style={{ position: "relative", marginBottom: 10 }}>
-                    <img src={r.thumbnail} alt={r.title} style={{ width: "100%", aspectRatio: "16/9", objectFit: "cover", borderRadius: 8, display: "block", opacity: .88 }} />
-                    <div style={{ position: "absolute", bottom: 6, right: 6, background: "rgba(6,10,18,.88)", borderRadius: 3, padding: "2px 6px", fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--cyan)" }}>{r.timestamp}</div>
-                    <div style={{ position: "absolute", top: 6, left: 6 }}><span className="badge">{r.tag}</span></div>
-                  </div>
-                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.title}</div>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.file}</div>
-                  <SimBar v={r.similarity} />
-                  {selected?.id === r.id && <PlayerExpand r={r} />}
-                </div>
-              ))}
-            </div>
-          )}
-        </>
-      )}
+                  <option value="similarity">Sort: Similarity</option>
+                  <option value="time">Sort: Timestamp</option>
+                </select>
 
-      {/* ── No results ── */}
-      {done && results.length === 0 && (
-        <div style={{ textAlign: "center", padding: "80px 0" }}>
-          <div className="animate-float" style={{ fontSize: 52, marginBottom: 20, opacity: .4 }}>∅</div>
-          <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>No matches found</div>
-          <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 24 }}>
-            No frames matched <strong>"{q}"</strong>. Try broader or different keywords.
-          </div>
-          <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-            <button className="btn btn-ghost" onClick={() => navigate("/")}>Try New Search</button>
-            <button className="btn btn-primary" onClick={() => navigate("/upload")}>Upload Videos</button>
-          </div>
-        </div>
-      )}
+                {/* View Toggle */}
+                <div className="flex bg-white/[0.05] border border-white/10 rounded-lg overflow-hidden">
+                  {(["list", "grid"] as const).map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setView(v)}
+                      className={`px-3.5 py-1.5 border-none text-xs font-semibold tracking-wider cursor-pointer transition-all duration-150 font-[Syne,sans-serif] ${
+                        view === v
+                          ? "bg-[rgba(0,255,200,0.15)] text-[#00ffc8]"
+                          : "bg-transparent text-white/40"
+                      }`}
+                    >
+                      {v === "list" ? "☰ List" : "⊞ Grid"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
 
-      {/* ── Empty query ── */}
-      {!q && !isLoading && (
-        <div style={{ textAlign: "center", padding: "80px 0", color: "var(--text-muted)" }}>
-          <div style={{ fontSize: 14 }}>Enter a search query above to begin.</div>
-        </div>
-      )}
-    </div>
+            {/* Cards */}
+            {view === "list" ? (
+              <div className="flex flex-col gap-2.5">
+                {sortedResults.map((r, i) => (
+                  <ResultCard
+                    key={r.id}
+                    r={r}
+                    view="list"
+                    isSelected={selected === r.id}
+                    onToggle={() =>
+                      setSelected(selected === r.id ? null : r.id)
+                    }
+                    index={i}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3.5">
+                {sortedResults.map((r, i) => (
+                  <ResultCard
+                    key={r.id}
+                    r={r}
+                    view="grid"
+                    isSelected={selected === r.id}
+                    onToggle={() =>
+                      setSelected(selected === r.id ? null : r.id)
+                    }
+                    index={i}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ── Empty State ── */}
+        {!isLoading && results.length === 0 && q && !error && (
+          <div
+            className="text-center py-24"
+            style={{ animation: "fadeSlideIn 0.3s ease" }}
+          >
+            <div className="text-5xl mb-4">🎞️</div>
+            <div className="text-lg font-bold text-white/60 mb-2">
+              No matches found
+            </div>
+            <div className="text-sm text-white/30">
+              Try a different search term or broaden your query
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   );
 }

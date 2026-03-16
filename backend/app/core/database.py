@@ -1,26 +1,30 @@
-
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from app.core.config import settings
 
-# Engine
+
+# Async Engine
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
+    pool_size=10,
+    max_overflow=20,
 )
 
-# Session
+
+# Session Factory
 AsyncSessionLocal = sessionmaker(
     bind=engine,
     class_=AsyncSession,
     expire_on_commit=False,
 )
 
-# Base model
+
+# Base Model
 Base = declarative_base()
 
 
-# Dependency for FastAPI
+# FastAPI Dependency
 async def get_db():
     async with AsyncSessionLocal() as session:
         yield session

@@ -1,21 +1,21 @@
 from celery import Celery
-from app.core.config import settings
 from app.services.video_ingestion import VideoIngestionService
+from app.services.clip_embeddings import CLIPEmbeddingService
+from app.core.config import settings
 
 celery_app = Celery(
-    "video_ingestion",
+    "video-worker",
     broker=settings.REDIS_URL,
     backend=settings.REDIS_URL
 )
 
-celery_app.conf.task_routes = {
-    "process_video_task": {"queue": "video"}
-}
+clip_service = CLIPEmbeddingService()
+ingestion_service = VideoIngestionService(clip_service)
 
 
-@celery_app.task(name="process_video_task")
-def process_video_task(video_path: str, video_id: str):
+@celery_app.task
+def process_video(video_id: str, filename: str):
 
-    service = VideoIngestionService()
+    video_path = f"storage/videos/{filename}"
 
-    service.process_video_sync(video_path, video_id)
+    ingestion_service.process_video_sync(video_path, video_id)

@@ -17,8 +17,14 @@ Phase 4: UI/UX & Result Playback (1 Month)Developing the frontend where a user t
 Run Celery
 celery -A app.workers.ingestion_worker.celery_app worker --loglevel=info
 
+Run Solo 
+celery -A app.workers.ingestion_worker.celery_app worker --loglevel=info --pool=solo
+
 Run Bakcend 
 uvicorn app.main:app --reload
 
 For table migrations
 alembic upgrade head
+
+
+pip install -r requirements.txt

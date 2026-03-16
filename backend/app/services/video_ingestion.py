@@ -1,13 +1,11 @@
-import uuid
 import os
-
+import asyncio
 from app.services.frame_extractor import FrameExtractor
-from app.services.clip_embeddings import CLIPEmbeddingService
 from app.services.storage_service import StorageService
 from app.core.database import AsyncSessionLocal
-from app.utils.logging import Logger
 from app.models.frame_embedding import FrameEmbedding
 from app.models.video import Video
+from app.utils.logging import Logger
 
 
 logger = Logger.get_logger(__name__)
@@ -15,99 +13,128 @@ logger = Logger.get_logger(__name__)
 
 class VideoIngestionService:
 
-    def __init__(self):
-        self.frame_extractor = FrameExtractor()
-        self.clip_service = CLIPEmbeddingService()
+    def __init__(self, clip_service):
+
+        self.frame_extractor = FrameExtractor(fps=5, scene_detection=True)
+        print("START CLIP EMBEDDING")
+        self.clip_service = clip_service
         self.storage = StorageService()
 
-    async def process_video(self, upload_file):
+    # ------------------------------------------------
+    # Main processing pipeline
+    # ------------------------------------------------
 
-        logger.info("Starting video ingestion")
+    def process_video_sync(self, video_path: str, video_id: str):
 
-        # ----------------------------------
-        # 1️⃣ Save uploaded video
-        # ----------------------------------
-        filename = await self.storage.save_video(upload_file)
+        print("========== VIDEO INGESTION START ==========")
+        print("VIDEO PATH:", video_path)
+        print("VIDEO ID:", video_id)
 
-        video_path = os.path.join(self.storage.video_dir, filename)
-
-        video_id = uuid.uuid4()
+        logger.info(f"Processing video {video_id}")
 
         frame_dir = f"/tmp/frames/{video_id}"
         os.makedirs(frame_dir, exist_ok=True)
 
-        async with AsyncSessionLocal() as session:
+        try:
 
-            try:
+            print("STEP 1: Extracting frames...")
 
-                # ----------------------------------
-                # 2️⃣ Create video record
-                # ----------------------------------
-                video = Video(
-                    id=video_id,
-                    title=upload_file.filename,
-                    filename=filename,
-                    video_url=self.storage.get_video_url(filename),
-                    status="processing",
-                    total_frames=0
-                )
+            frames = self.frame_extractor.extract_frames(video_path, frame_dir)
 
-                session.add(video)
-                await session.commit()
+            print("Frames extracted:", len(frames))
 
-                # ----------------------------------
-                # 3️⃣ Extract frames
-                # ----------------------------------
-                frames = self.frame_extractor.extract_frames(video_path, frame_dir)
+            if not frames:
+                print("ERROR: No frames extracted from video")
+                logger.warning("No frames extracted")
 
-                logger.info(f"Extracted {len(frames)} frames")
+            batch_size = 64
+            embeddings_to_save = []
 
-                batch_size = 32
+            for batch_start in range(0, len(frames), batch_size):
 
-                for batch_start in range(0, len(frames), batch_size):
+                batch_frames = frames[batch_start: batch_start + batch_size]
 
-                    batch_frames = frames[batch_start: batch_start + batch_size]
+                print("START CLIP EMBEDDING")
 
-                    embeddings = self.clip_service.batch_image_embeddings(batch_frames)
+                embeddings = self.clip_service.batch_image_embeddings(batch_frames)
+                print("CLIP EMBEDDING DONE")
 
-                    objects = []
+                for i, (frame_path, emb) in enumerate(zip(batch_frames, embeddings)):
 
-                    for i, (frame_path, emb) in enumerate(zip(batch_frames, embeddings)):
+                    frame_number = batch_start + i
+                    timestamp = frame_number * 1.0
 
-                        frame_number = batch_start + i
-                        timestamp = frame_number * 1.0
+                    print("Saving thumbnail for frame:", frame_number)
 
-                        thumb_filename = self.storage.save_thumbnail(frame_path)
+                    thumb_filename = self.storage.save_thumbnail(frame_path)
 
-                        frame_embedding = FrameEmbedding(
+                    print("Thumbnail saved:", thumb_filename)
+
+                    embeddings_to_save.append(
+                        FrameEmbedding(
                             video_id=video_id,
                             frame_number=frame_number,
                             timestamp=timestamp,
                             thumbnail_url=self.storage.get_thumbnail_url(thumb_filename),
                             embedding=emb.tolist()
                         )
+                    )
 
-                        objects.append(frame_embedding)
+            print("STEP 3: Saving embeddings to database")
+            print("Total embeddings:", len(embeddings_to_save))
 
-                    session.add_all(objects)
+            asyncio.run(self._save_embeddings(video_id, embeddings_to_save))
 
-                # ----------------------------------
-                # 4️⃣ Update video metadata
-                # ----------------------------------
-                video.total_frames = len(frames)
-                video.status = "ready"
+            print("========== VIDEO INGESTION DONE ==========")
 
-                await session.commit()
+        except Exception as e:
 
-                logger.info("Video ingestion completed successfully")
+            print("VIDEO INGESTION FAILED:", str(e))
 
-            except Exception as e:
+            logger.error("Video ingestion failed")
+            logger.error(str(e))
+            raise
 
-                await session.rollback()
+        finally:
 
-                logger.error("Video ingestion failed")
-                logger.error(str(e))
+            print("Cleaning frame directory")
 
-                raise
+            import shutil
+            shutil.rmtree(frame_dir, ignore_errors=True)
 
-        return str(video_id)
+            logger.info("Video ingestion completed")
+    # ------------------------------------------------
+    # Save embeddings to DB
+    # ------------------------------------------------
+
+    async def _save_embeddings(self, video_id, embeddings):
+
+        async with AsyncSessionLocal() as session:
+
+            await session.execute(
+                Video.__table__.update()
+                .where(Video.id == video_id)
+                .values(
+                    total_frames=len(embeddings),
+                    status="processing"
+                )
+            )
+
+            session.add_all(embeddings)
+
+            # If we have at least one embedding, use its thumbnail as the video's thumbnail
+            video_thumbnail = None
+            if embeddings:
+                # embeddings are FrameEmbedding instances; they should have thumbnail_url set
+                try:
+                    video_thumbnail = embeddings[0].thumbnail_url
+                except Exception:
+                    video_thumbnail = None
+
+            await session.execute(
+                Video.__table__.update()
+                .where(Video.id == video_id)
+                .values(status="ready", thumbnail_url=video_thumbnail)
+            )
+
+            await session.commit()

@@ -14,14 +14,15 @@ class Video(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
     title = Column(String(500), nullable=False)
-    filename = Column(String(255), nullable=False)
+
+    filename = Column(String(255), nullable=False, unique=True)
 
     duration = Column(Float, nullable=True)
 
     video_url = Column(String, nullable=True)
     thumbnail_url = Column(String, nullable=True)
 
-    status = Column(String(50), default="processing")
+    status = Column(String(50), default="processing", index=True)
 
     total_frames = Column(Integer, default=0)
 
@@ -32,7 +33,6 @@ class Video(Base):
         onupdate=func.now()
     )
 
-    # relationship with embeddings
     frame_embeddings = relationship(
         "FrameEmbedding",
         back_populates="video",

@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Column, Float, Integer, ForeignKey, TIMESTAMP, String
+from sqlalchemy import Column, Float, Integer, ForeignKey, TIMESTAMP, String, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -31,5 +31,8 @@ class FrameEmbedding(Base):
 
     created_at = Column(TIMESTAMP, server_default=func.now())
 
-    # relationship with video
     video = relationship("Video", back_populates="frame_embeddings")
+
+
+# Additional indexes
+Index("idx_frame_video_frame", FrameEmbedding.video_id, FrameEmbedding.frame_number)
