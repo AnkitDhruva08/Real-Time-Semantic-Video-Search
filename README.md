@@ -1,6 +1,5 @@
 # Real-Time-Semantic-Video-Search
 Real-Time Semantic Video Search
-[Thursday 5:22 PM] Ayush Michael
 2. Real-Time Semantic Video Search
 Estimated Time: 3–5 Months
 The challenge here isn't just the AI; it’s the "Big Data" problem of processing 1,000+ hours of video without the cost or latency spiraling out of control.
