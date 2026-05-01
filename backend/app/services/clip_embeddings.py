@@ -2,74 +2,149 @@ import torch
 import clip
 import numpy as np
 from PIL import Image
+from typing import List
 from app.utils.logging import Logger
 
 logger = Logger.get_logger(__name__)
 
 
 class CLIPEmbeddingService:
+    """
+    CLIP embedding service for generating text and image embeddings.
+    Supports batch processing and GPU acceleration.
+    """
 
-    def __init__(self, model_name="ViT-B/32"):
+    def __init__(self, model_name: str = "ViT-B/32"):
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        logger.info(f"Loading CLIP model {model_name} on {self.device}")
+        logger.info(f"Loading CLIP model '{model_name}' on device: {self.device}")
 
         self.model, self.preprocess = clip.load(model_name, device=self.device)
         self.model.eval()
 
-    # ---------------------------------------------
-    # Image embedding
-    # ---------------------------------------------
+        # embedding dimension check
+        dummy = clip.tokenize(["test"]).to(self.device)
+        with torch.no_grad():
+            emb = self.model.encode_text(dummy)
+
+        self.embedding_dim = emb.shape[-1]
+
+        logger.info(f"CLIP embedding dimension: {self.embedding_dim}")
+
+    # --------------------------------------------------
+    # Image Embedding
+    # --------------------------------------------------
 
     def image_embedding(self, image_path: str):
 
-        image = Image.open(image_path).convert("RGB")
-        image = self.preprocess(image).unsqueeze(0).to(self.device)
+        try:
 
-        with torch.no_grad():
-            embedding = self.model.encode_image(image)
+            with Image.open(image_path) as img:
 
-        embedding = embedding / embedding.norm(dim=-1, keepdim=True)
+                image = img.convert("RGB")
 
-        return embedding.cpu().numpy()[0]
+            image = self.preprocess(image).unsqueeze(0).to(self.device)
 
-    # ---------------------------------------------
-    # Text embedding
-    # ---------------------------------------------
+            with torch.no_grad():
+                embedding = self.model.encode_image(image)
+
+            embedding = embedding / embedding.norm(dim=-1, keepdim=True)
+
+            return embedding.cpu().numpy()[0]
+
+        except Exception as e:
+
+            logger.error(f"Image embedding failed for {image_path}: {e}")
+
+            return None
+
+    # --------------------------------------------------
+    # Text Embedding
+    # --------------------------------------------------
 
     def text_embedding(self, text: str):
-        print('text:', text)
-        print('Ankit Mishra')
-        tokens = clip.tokenize([text]).to(self.device)
 
-        with torch.no_grad():
-            embedding = self.model.encode_text(tokens)
+        if not text:
+            logger.warning("Empty text provided for embedding")
+            return None
 
-        embedding = embedding / embedding.norm(dim=-1, keepdim=True)
+        try:
 
-        return embedding.cpu().numpy()[0]
+            tokens = clip.tokenize([text]).to(self.device)
 
-    # ---------------------------------------------
-    # Batch embeddings
-    # ---------------------------------------------
+            with torch.no_grad():
+                embedding = self.model.encode_text(tokens)
 
-    def batch_image_embeddings(self, image_paths, batch_size=64):
-        logger.info(f"Processing batch of {len(image_paths)} images")
+            embedding = embedding / embedding.norm(dim=-1, keepdim=True)
+
+            return embedding.cpu().numpy()[0]
+
+        except Exception as e:
+
+            logger.error(f"Text embedding failed for '{text}': {e}")
+
+            return None
+
+    # --------------------------------------------------
+    # Batch Image Embeddings
+    # --------------------------------------------------
+
+    def batch_image_embeddings(
+        self,
+        image_paths: List[str],
+        batch_size: int = 64
+    ):
+
+        if not image_paths:
+            logger.warning("Empty image path list provided")
+            return np.array([])
+
+        logger.info(f"Generating embeddings for {len(image_paths)} frames")
+
         embeddings = []
+
         for i in range(0, len(image_paths), batch_size):
+
             batch_paths = image_paths[i:i + batch_size]
-            logger.debug(f"Batch {i//batch_size + 1}: paths {batch_paths}")
+
+            images = []
+
+            valid_paths = []
+
+            for path in batch_paths:
+
+                try:
+                    with Image.open(path) as img:
+                        img = img.convert("RGB")
+
+                    images.append(self.preprocess(img))
+                    valid_paths.append(path)
+
+                except Exception as e:
+
+                    logger.warning(f"Skipping corrupted frame {path}: {e}")
+
+            if not images:
+                continue
+
+            images = torch.stack(images).to(self.device)
+
             try:
-                images = torch.stack([
-                    self.preprocess(Image.open(p).convert("RGB")) for p in batch_paths
-                ]).to(self.device)
+
                 with torch.no_grad():
                     batch_embeddings = self.model.encode_image(images)
-                batch_embeddings = batch_embeddings / batch_embeddings.norm(dim=-1, keepdim=True)
+
+                batch_embeddings = batch_embeddings / batch_embeddings.norm(
+                    dim=-1, keepdim=True
+                )
+
                 embeddings.extend(batch_embeddings.cpu().numpy())
+
             except Exception as e:
-                logger.exception(f"Error processing batch {i//batch_size + 1}: {e}")
-                raise   # re-raise to stop processing
-        logger.info(f"Completed embedding generation for {len(embeddings)} frames")
+
+                logger.error(f"Batch embedding failed: {e}")
+
+        logger.info(f"Generated {len(embeddings)} embeddings")
+
         return np.array(embeddings)

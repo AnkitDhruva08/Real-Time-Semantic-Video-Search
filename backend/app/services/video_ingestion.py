@@ -6,6 +6,9 @@ from app.core.database import AsyncSessionLocal
 from app.models.frame_embedding import FrameEmbedding
 from app.models.video import Video
 from app.utils.logging import Logger
+import shutil
+import cv2
+from ultralytics import YOLO
 
 
 logger = Logger.get_logger(__name__)
@@ -16,9 +19,43 @@ class VideoIngestionService:
     def __init__(self, clip_service):
 
         self.frame_extractor = FrameExtractor(fps=5, scene_detection=True)
-        print("START CLIP EMBEDDING")
+
         self.clip_service = clip_service
+
         self.storage = StorageService()
+
+        # Load YOLO object detector once
+        logger.info("Loading YOLO object detection model")
+
+        self.detector = YOLO("yolov8n.pt")
+
+
+     # ------------------------------------------------
+    # Detect objects in frame
+    # ------------------------------------------------
+
+    def detect_objects(self, frame_path):
+
+        try:
+
+            frame = cv2.imread(frame_path)
+
+            results = self.detector(frame)
+
+            labels = []
+
+            for r in results:
+                for box in r.boxes:
+                    cls = int(box.cls[0])
+                    labels.append(self.detector.names[cls])
+
+            return list(set(labels))
+
+        except Exception as e:
+
+            logger.warning(f"Object detection failed for {frame_path}: {e}")
+
+            return []
 
     # ------------------------------------------------
     # Main processing pipeline

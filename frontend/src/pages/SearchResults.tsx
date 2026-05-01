@@ -292,52 +292,53 @@ export function SearchResults() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-  const [view, setView] = useState<"list" | "grid">("list");
+  const [view, setView] = useState<"grid" | "list">("grid");
   const [sortBy, setSortBy] = useState<"similarity" | "time">("similarity");
 
   /* ── Fetch ── */
   const fetchVideoData = async (query: string) => {
-    if (!query.trim()) return;
-    setIsLoading(true);
-    setError("");
-    try {
-      const response = await fetch(
-        `${import.meta.env.VITE_API_BASE_URL}/search?q=${encodeURIComponent(query)}`
-      );
-      if (!response.ok) throw new Error(`API Error ${response.status}`);
-      const data = await response.json();
-      console.log("Raw API response:", data);
+  setIsLoading(true);
+  setError("");
 
-      const mapped = (data.results || []).map((r: any) => ({
-        id: r.frame_id ?? `${r.video_id}-${r.timestamp}`,
-        title: r.title ?? "Video",
-        file: r.video_url ?? "",
-        video: `http://localhost:8000/videos/${r.filename ?? r.video_id}`,
-        timestamp: new Date(r.timestamp * 1000).toISOString().substr(11, 8),
-        seconds: r.timestamp,
-        similarity: r.similarity,
-        thumbnail: `http://localhost:8000${r.thumbnail_url}`,
-      }));
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_API_BASE_URL}/search?q=${encodeURIComponent(query || "")}`
+    );
 
-      console.log("Mapped results:", mapped);
+    if (!response.ok) throw new Error(`API Error ${response.status}`);
 
-      setResults(mapped);
-    } catch (err) {
-      console.error(err);
-      setError("Failed to fetch videos. Please check your connection.");
-      setResults([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    const data = await response.json();
+
+    const mapped = (data.results || []).map((r: any) => ({
+      id: r.frame_id ?? `${r.video_id}-${r.timestamp}`,
+      title: r.title ?? "Video",
+      file: r.video_url ?? "",
+      video: `http://localhost:8000/videos/${r.filename ?? r.video_id}`,
+      timestamp: new Date(r.timestamp * 1000).toISOString().substr(11, 8),
+      seconds: r.timestamp,
+      similarity: r.similarity ?? 1,
+      thumbnail: `http://localhost:8000${r.thumbnail_url}`,
+    }));
+
+    setResults(mapped);
+
+  } catch (err) {
+
+    console.error(err);
+    setError("Failed to fetch videos. Please check your connection.");
+    setResults([]);
+
+  } finally {
+
+    setIsLoading(false);
+
+  }
+};
 
   useEffect(() => {
-    if (q) {
-      setLiveQuery(q);
-      fetchVideoData(q);
-    }
-  }, [q]);
-
+  setLiveQuery(q || "");
+  fetchVideoData(q || "");
+}, [q]);
   const doSearch = (term = liveQuery) => {
     const t = term.trim();
     if (!t) return;
@@ -471,7 +472,7 @@ export function SearchResults() {
 
                 {/* View Toggle */}
                 <div className="flex bg-white/[0.05] border border-white/10 rounded-lg overflow-hidden">
-                  {(["list", "grid"] as const).map((v) => (
+                  {(["grid", "list"] as const).map((v) => (
                     <button
                       key={v}
                       onClick={() => setView(v)}
@@ -481,7 +482,7 @@ export function SearchResults() {
                           : "bg-transparent text-white/40"
                       }`}
                     >
-                      {v === "list" ? "☰ List" : "⊞ Grid"}
+                      {v === "grid" ? "⊞ Grid" : "☰ List"}
                     </button>
                   ))}
                 </div>
